@@ -1,8 +1,8 @@
 {
   "name": "dsh-answer-pet",
-  "version": "0.4.3",
+  "version": "0.5.0",
   "type": "module",
-  "description": "DeepSeek Harness Web 蓝鲸桌面宠物：实时显示多会话回答进度、阶段、token、输出速率与耗时。",
+  "description": "DeepSeek Harness Web 蓝鲸桌面宠物：实时显示多会话回答进度、模型轨迹、工具调用、token、输出速率与耗时。",
   "author": {
     "name": "Nanki-nn",
     "email": "1113049408@qq.com"

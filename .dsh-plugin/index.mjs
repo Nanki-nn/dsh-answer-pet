@@ -11,6 +11,7 @@
 import { NAMESPACE, DEFAULTS, buildSchema, validateConfig } from './src/config.mjs'
 import { initialProgressState, startTurn, applyEvent, deriveView } from './src/progress.mjs'
 import { foldSessionMeta } from './src/session-meta.mjs'
+import { initialTraceState, startTraceTurn, applyTraceEvent, deriveTrace, foldTrace } from './src/trace.mjs'
 import { STATE_PATH, EVENTS_PATH, CONFIG_PATH } from './src/routes.mjs'
 
 export const name = 'dsh-answer-pet'
@@ -44,6 +45,7 @@ export function apply(ctx) {
   // ---- 会话进度分桶 + 会话元数据（title/running）----
   const sessions = new Map() // sessionId → 进度状态
   const metas = new Map()    // sessionId → { title, running }
+  const traces = new Map()   // sessionId → 最近阶段/工具轨迹
   let lastActiveId = null
   let lastActiveAt = 0
   const touch = (id, state, meta) => {
@@ -59,6 +61,7 @@ export function apply(ctx) {
         id: lastActiveId,
         state: sessions.get(lastActiveId),
         meta: metas.get(lastActiveId) ?? { title: null, running: false },
+        trace: traces.get(lastActiveId) ?? initialTraceState(),
       }
     }
     return null
@@ -75,7 +78,10 @@ export function apply(ctx) {
 
   // ---- 事件订阅 ----
   // 阶段边沿集合：这些事件才触发 SSE（token 平滑由轮询承担）。
-  const EDGE_TYPES = new Set(['turn/start', 'step/start', 'tool/call', 'tool/result', 'step/end', 'turn/end'])
+  const EDGE_TYPES = new Set([
+    'turn/start', 'step/start', 'tool/call', 'tool/result',
+    'tool/code-dispatch-start', 'tool/code-dispatch', 'step/end', 'turn/end',
+  ])
   ctx.on('session/event', (session, event) => {
     const id = typeof session?.id === 'string' ? session.id : null
     if (id === null || event === null || typeof event !== 'object') return
@@ -86,9 +92,23 @@ export function apply(ctx) {
       meta = foldSessionMeta(typeof session === 'object' && session !== null ? session.events : undefined)
       metas.set(id, meta)
     }
+    let trace = traces.get(id)
+    if (trace === undefined) {
+      // session/event 在 append 后派发，seed 时只折叠当前事件之前的历史，避免首条事件重复。
+      const seed = Array.isArray(session?.events)
+        ? session.events.filter((item) => item !== event && (
+          typeof item?.seq !== 'number' || typeof event.seq !== 'number' || item.seq < event.seq
+        ))
+        : []
+      trace = foldTrace(seed, event.time ?? Date.now())
+      traces.set(id, trace)
+    }
     if (event.type === 'turn/start') {
       meta.running = true
-      const fresh = startTurn(event.data, event.time ?? Date.now())
+      const now = event.time ?? Date.now()
+      const fresh = startTurn(event.data, now)
+      trace = startTraceTurn(event.data, now)
+      traces.set(id, trace)
       touch(id, fresh, meta)
       broadcastEvent()
       return
@@ -105,12 +125,14 @@ export function apply(ctx) {
       touch(id, state, meta)
     }
     const before = state.phase
-    applyEvent(state, event, event.time ?? Date.now())
+    const now = event.time ?? Date.now()
+    applyEvent(state, event, now)
+    applyTraceEvent(trace, event, now)
     if (state.phase !== before || event.type === 'assistant/chunk') {
       // chunk 也算活跃——更新时间戳（避免活跃会话被 2 分钟窗误判）
       lastActiveAt = Date.now()
     }
-    if (EDGE_TYPES.has(event.type) && state.phase !== before) broadcastEvent()
+    if (EDGE_TYPES.has(event.type)) broadcastEvent()
   })
 
   // ---- 路由 ----
@@ -137,10 +159,12 @@ export function apply(ctx) {
                   id,
                   title: m.title,
                   view: deriveView(state ?? initialProgressState()),
+                  trace: deriveTrace(traces.get(id) ?? initialTraceState()),
                 })
               }
               json(res, 200, {
                 view: deriveView(cur !== null ? cur.state : initialProgressState()),
+                trace: deriveTrace(cur !== null ? cur.trace : initialTraceState()),
                 session: cur !== null ? { id: cur.id, title: cur.meta.title, running: cur.meta.running } : null,
                 running,
                 active: cur !== null,

@@ -124,6 +124,21 @@ const CSS = `
   font-variant-numeric: tabular-nums; }
 [data-${PREFIX}] .ap-session-status { color: #AFB7C4; font-size: 11px; line-height: 15px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+/* 模型轨迹：最近动作与工具调用，紧凑纵向时间线 */
+[data-${PREFIX}] .ap-session-trace { display: grid; gap: 3px; margin: 1px 0 2px 3px;
+  padding-left: 10px; border-left: 1px solid rgba(126,147,177,.3); }
+[data-${PREFIX}] .ap-session-trace:empty { display: none; }
+[data-${PREFIX}] .ap-trace-item { position: relative; display: grid; grid-template-columns: minmax(0,1fr) auto;
+  column-gap: 7px; min-width: 0; color: #C7CED9; font-size: 10px; line-height: 14px; }
+[data-${PREFIX}] .ap-trace-item::before { content: ''; position: absolute; left: -14px; top: 4px;
+  width: 6px; height: 6px; border-radius: 50%; background: #778394; box-shadow: 0 0 0 2px rgba(119,131,148,.14); }
+[data-${PREFIX}] .ap-trace-item[data-status="running"]::before { background: #65A0FF;
+  box-shadow: 0 0 0 2px rgba(101,160,255,.16),0 0 6px rgba(101,160,255,.65); animation: ap-pulse 1.15s ease-in-out infinite; }
+[data-${PREFIX}] .ap-trace-item[data-status="done"]::before { background: #58C98F; }
+[data-${PREFIX}] .ap-trace-item[data-status="error"]::before { background: #F06A72; }
+[data-${PREFIX}] .ap-trace-main { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+[data-${PREFIX}] .ap-trace-detail { color: #8F9AAA; }
+[data-${PREFIX}] .ap-trace-time { color: #7F8998; white-space: nowrap; font-variant-numeric: tabular-nums; }
 [data-${PREFIX}] .ap-session-track { position: relative; height: 5px; border-radius: 6px;
   background: rgba(255,255,255,.11); overflow: hidden; }
 [data-${PREFIX}] .ap-session-fill { position: absolute; inset: 0 auto 0 0; width: 0%; border-radius: 6px;
@@ -414,16 +429,41 @@ function apply() {
     if (card !== undefined) return card
     const el = document.createElement('div')
     el.className = 'ap-session-card'
-    el.innerHTML = `<div class="ap-session-head"><span class="ap-session-dot"></span><span class="ap-session-title"></span><span class="ap-session-pct"></span></div><div class="ap-session-status"></div><div class="ap-session-track"><div class="ap-session-fill"></div></div>`
+    el.innerHTML = `<div class="ap-session-head"><span class="ap-session-dot"></span><span class="ap-session-title"></span><span class="ap-session-pct"></span></div><div class="ap-session-status"></div><div class="ap-session-trace"></div><div class="ap-session-track"><div class="ap-session-fill"></div></div>`
     card = {
       el,
       title: el.querySelector('.ap-session-title'),
       pct: el.querySelector('.ap-session-pct'),
       status: el.querySelector('.ap-session-status'),
+      trace: el.querySelector('.ap-session-trace'),
       fill: el.querySelector('.ap-session-fill'),
     }
     sessionCards.set(id, card)
     return card
+  }
+  function renderTrace(container, items) {
+    container.replaceChildren()
+    if (!Array.isArray(items)) return
+    for (const item of items.slice(-4)) {
+      if (item === null || typeof item !== 'object' || typeof item.label !== 'string') continue
+      const row = document.createElement('div')
+      row.className = 'ap-trace-item'
+      row.dataset.status = typeof item.status === 'string' ? item.status : 'running'
+      const main = document.createElement('span')
+      main.className = 'ap-trace-main'
+      main.textContent = item.label
+      if (typeof item.detail === 'string' && item.detail.length > 0) {
+        const detail = document.createElement('span')
+        detail.className = 'ap-trace-detail'
+        detail.textContent = ` · ${item.detail}`
+        main.appendChild(detail)
+      }
+      const time = document.createElement('span')
+      time.className = 'ap-trace-time'
+      time.textContent = Number.isFinite(item.durationMs) ? fmtElapsed(item.durationMs) : ''
+      row.append(main, time)
+      container.appendChild(row)
+    }
   }
   function renderSessionCards(items) {
     const alive = new Set()
@@ -436,6 +476,7 @@ function apply() {
       card.title.textContent = typeof item.title === 'string' && item.title.length > 0 ? item.title : '当前会话'
       card.pct.textContent = `${Math.round(progress)}%`
       card.status.textContent = statusText(view)
+      renderTrace(card.trace, item.trace)
       card.fill.style.width = `${progress}%`
       card.el.toggleAttribute('data-streaming', view.phase === 'stream')
       sessionList.appendChild(card.el)
@@ -478,10 +519,16 @@ function apply() {
         id: item?.id,
         title: item?.title,
         view: isCurrent ? view : { phase: 'think', label: '正在运行', progress: 5, elapsedMs: 0 },
+        trace: isCurrent && Array.isArray(data.trace) ? data.trace : [],
       }
     }) : []
     if (runningItems.length === 0 && (data.session?.running === true || phaseIsRunning)) {
-      runningItems = [{ id: data.session?.id ?? 'current', title: data.session?.title, view }]
+      runningItems = [{
+        id: data.session?.id ?? 'current',
+        title: data.session?.title,
+        view,
+        trace: Array.isArray(data.trace) ? data.trace : [],
+      }]
     }
     const runningCount = runningItems.length
     renderSessionCards(runningItems)

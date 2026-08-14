@@ -2,7 +2,7 @@
 
 <p align="center"><strong>DSH Web GUI 蓝鲸桌面宠物：实时展示回答进度与运行中的会话。</strong></p>
 
-`dsh-answer-pet` 是一个 DeepSeek Harness Web bundle 插件。它在页面中显示一只可拖拽的蓝鲸，并将每个运行会话的回答阶段、进度、token、输出速率和耗时展示为独立状态卡片。
+`dsh-answer-pet` 是一个 DeepSeek Harness Web bundle 插件。它在页面中显示一只可拖拽的蓝鲸，并将每个运行会话的回答阶段、进度、模型轨迹、工具调用、token、输出速率和耗时展示为独立状态卡片。
 
 ## 功能
 
@@ -10,6 +10,8 @@
 - 实时显示开始处理、思考、输出、工具调用、完成和错误状态。
 - 显示输出 token、token/s、耗时、进度百分比和文本片段。
 - 多会话并发时，每个运行中的会话显示一张独立进度卡。
+- 卡片内展示最近模型轨迹：分析任务、推理与规划、组织回答、调用工具及运行结果。
+- 工具轨迹显示工具名、安全短描述、运行/完成/失败状态和耗时，不展示完整命令或原始参数。
 - 状态卡可折叠；折叠后仅在有运行会话时显示会话数量。
 - 拖拽位置持久化；单击蓝鲸只触发眨眼。
 - 轮询与 SSE 结合：流式数据平滑更新，阶段切换即时刷新。
@@ -70,7 +72,8 @@ answer-pet:
 - `.dsh-plugin/index.mjs`：监听 `session/event`，按会话维护进度与 title/running 元数据，提供 `/answer-pet/state`、`/answer-pet/events` 和 `/answer-pet/config`。
 - `.dsh-plugin/src/progress.mjs`：进度阶段机、token 填充和速率 EMA。
 - `.dsh-plugin/src/session-meta.mjs`：从事件折叠会话标题和运行状态。
-- `.dsh-plugin/client/index.mjs`：浏览器端 DOM、SVG、状态卡和交互实现。
+- `.dsh-plugin/src/trace.mjs`：折叠阶段与工具事件，生成有限长度、安全摘要的模型轨迹。
+- `.dsh-plugin/client/index.mjs`：浏览器端 DOM、SVG、状态卡、轨迹时间线和交互实现。
 - `.dsh-plugin/client.js`：由构建脚本生成的 DSH client bundle。
 
 ## 本地开发
