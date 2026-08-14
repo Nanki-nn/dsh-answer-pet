@@ -218,6 +218,8 @@ dsh plugin --profile web add "D:\AI\dsh\dsh-answer-pet"
 
 客户端 bundle 修改后刷新页面生效；Node half 修改后需要重启 `dsh web`。
 
+想报告问题、提交代码或新增宠物主题，请阅读 [贡献指南](./CONTRIBUTING.md)。
+
 ## License
 
 MIT © Nanki-nn
