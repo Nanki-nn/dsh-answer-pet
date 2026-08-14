@@ -1,14 +1,21 @@
 # dsh-answer-pet
 
-<p align="center"><strong>DSH Web GUI 蓝鲸桌面宠物：实时展示回答进度与运行中的会话。</strong></p>
-<img width="206" height="207" alt="image" src="https://github.com/user-attachments/assets/575dfe92-7b18-47be-830e-c2234587ed7a" />
+<p align="center"><strong>DSH Web GUI 蓝鲸桌面宠物：实时展示回答进度、多会话状态与模型执行轨迹。</strong></p>
+
+<p align="center">
+  <img width="206" height="207" alt="dsh-answer-pet 蓝鲸形象" src="https://github.com/user-attachments/assets/575dfe92-7b18-47be-830e-c2234587ed7a">
+</p>
+
 `dsh-answer-pet` 是一个 DeepSeek Harness Web bundle 插件。它在页面中显示一只可拖拽的蓝鲸，并将每个运行会话的回答阶段、进度、模型轨迹、工具调用、token、输出速率和耗时展示为独立状态卡片。
 
+<p align="center">
+  <img src="./assets/dsh-answer-pet-demo.gif" width="560" alt="dsh-answer-pet 蓝鲸宠物、多会话进度卡和模型工具调用轨迹演示">
+</p>
 
 ## 功能
 
 - 蓝鲸 SVG 桌面宠物，无外部图片资源。
-- 实时显示开始处理、思考、输出、工具调用、完成和错误状态。
+- 实时显示开始处理、思考、输出、工具调用和完成状态；工具失败会在轨迹中标红。
 - 显示输出 token、token/s、耗时、进度百分比和文本片段。
 - 多会话并发时，每个运行中的会话显示一张独立进度卡。
 - 卡片内展示最近模型轨迹：分析任务、推理与规划、组织回答、调用工具及运行结果。
@@ -24,7 +31,9 @@
 dsh plugin --profile web add github:Nanki-nn/dsh-answer-pet
 ```
 
-安装后重启 `dsh web`，再刷新页面。
+安装后重启 `dsh web`，再刷新页面。升级插件时重复执行同一条安装命令即可。
+
+> 模型轨迹由插件的 Node half 从 `session/event` 折叠生成；从旧版本升级到 `0.5.0` 后必须重启 `dsh web`，仅刷新浏览器不会产生轨迹数据。
 
 ## 回答进度
 
@@ -36,7 +45,6 @@ dsh plugin --profile web add github:Nanki-nn/dsh-answer-pet
 | 输出（`assistant/chunk`） | 摆尾、嘴角轻动 | 10% → 90%，按 token 填充 |
 | 工具（`tool/call`） | 侧鳍拍动 | 冻结当前进度并显示工具名 |
 | 完成（`turn/end`） | 眯眼庆祝 | 100% |
-| 出错 | 错误状态动画 | 显示错误状态 |
 
 进度计算规则：
 
@@ -45,6 +53,58 @@ dsh plugin --profile web add github:Nanki-nn/dsh-answer-pet
 - 没有 `maxTokens` 时使用饱和曲线估算，避免进度长期停滞。
 - 同一回合内进度单调不减。
 - 输出速率使用 EMA 平滑估算。
+
+## 状态卡结构
+
+每个运行会话对应一张状态卡，包含：
+
+1. **标题行**：运行状态圆点、会话标题、进度百分比。
+2. **统计行**：当前阶段、输出 token、token/s 和已运行时间。
+3. **轨迹时间线**：最近的模型动作、工具调用、状态和耗时。
+4. **进度条**：同一回合内平滑、单调填充；模型输出时显示流动效果。
+
+多个会话同时运行时，卡片按会话独立更新并纵向排列。没有运行会话时不显示状态卡，也不显示数量按钮。
+
+## 模型执行轨迹
+
+每张运行会话卡都会展示最近的模型动作，例如：
+
+```text
+分析任务 · 步骤 1                  1s
+推理与规划                         3s
+调用 grep · SessionEvent           2s
+组织回答                           5s
+```
+
+轨迹状态通过时间线圆点区分：
+
+- **蓝色呼吸圆点**：当前正在执行。
+- **绿色圆点**：动作或工具调用已完成。
+- **红色圆点**：工具调用失败。
+
+可识别的轨迹包括：
+
+- 开始处理请求。
+- 进入模型步骤并分析任务。
+- 生成 reasoning 内容时显示“推理与规划”。
+- 生成正文时显示“组织回答”。
+- 原生 `tool/call` / `tool/result` 工具调用及结果。
+- `run_code` 内部的 `tool/code-dispatch-start` / `tool/code-dispatch` 嵌套工具调用。
+
+为避免轨迹区域过高，宿主最多保存最近 6 条，卡片显示最近 4 条。每个运行会话独立维护自己的轨迹。
+
+### 参数与隐私
+
+工具轨迹始终显示实际工具名，例如 `read`、`grep`、`pwsh`、`web_search`。参数区域只从以下白名单字段提取简短摘要：
+
+- `description`
+- `query`
+- `pattern`
+- `file_path`
+- `path`
+- `url`
+
+插件不会在轨迹面板中显示完整 Shell 命令、完整工具参数或原始 JSON；摘要会压缩空白并限制长度。
 
 ## 交互
 
@@ -68,12 +128,52 @@ answer-pet:
   showBubble: true  # 显示状态气泡
 ```
 
+## 常见问题
+
+### 安装后没有看到蓝鲸
+
+确认插件安装到了 Web profile：
+
+```sh
+dsh plugin --profile web add github:Nanki-nn/dsh-answer-pet
+```
+
+然后停止并重新启动当前的 `dsh web` 进程，再刷新原来的 Web GUI 页面。单独启动另一个 Web 服务不会更新当前页面。
+
+### 能看到蓝鲸，但没有模型轨迹
+
+轨迹依赖 Node half 监听 `session/event`。更新插件后必须重启 `dsh web`；仅刷新页面只能更新浏览器端样式，无法加载新的宿主逻辑。
+
+### 为什么空闲时不显示数字 `0`
+
+这是预期行为。数量按钮只在状态卡已收起且至少有一个运行会话时显示；空闲时保持界面简洁。
+
+### 如何恢复被拖动的默认位置
+
+在当前 DSH Web 页面打开浏览器开发者工具并执行：
+
+```js
+localStorage.removeItem('answer-pet:pos')
+location.reload()
+```
+
+如需同时恢复状态卡的展开状态：
+
+```js
+localStorage.removeItem('answer-pet:bar')
+location.reload()
+```
+
+### 为什么进度不是模型提供的精确百分比
+
+多数模型接口不会报告“回答完成百分比”。插件根据阶段、token、`maxTokens` 和饱和曲线估算进度；真实 token usage 到达后会覆盖流式估算值。
+
 ## 架构
 
 - `.dsh-plugin/index.mjs`：监听 `session/event`，按会话维护进度与 title/running 元数据，提供 `/answer-pet/state`、`/answer-pet/events` 和 `/answer-pet/config`。
 - `.dsh-plugin/src/progress.mjs`：进度阶段机、token 填充和速率 EMA。
 - `.dsh-plugin/src/session-meta.mjs`：从事件折叠会话标题和运行状态。
-- `.dsh-plugin/src/trace.mjs`：折叠阶段与工具事件，生成有限长度、安全摘要的模型轨迹。
+- `.dsh-plugin/src/trace.mjs`：折叠阶段与工具事件，生成有限长度、安全摘要的模型轨迹（宿主保留 6 条，客户端展示 4 条）。
 - `.dsh-plugin/client/index.mjs`：浏览器端 DOM、SVG、状态卡、轨迹时间线和交互实现。
 - `.dsh-plugin/client.js`：由构建脚本生成的 DSH client bundle。
 
