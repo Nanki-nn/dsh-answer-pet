@@ -1,5 +1,5 @@
-# dsh-answer-pet bundle patch：向 web 组合挂载 dsh-answer-pet
-# （Node half 听 session/event 推导回答进度；client half 由 __ModuleLoader__ 内核挂载渲染宠物）。
+# dsh-answer-pet bundle patch：向 web 组合挂载可扩展回答状态宠物框架。
+# Node half 折叠进度/轨迹；client half 挂载 PetTheme、宠物与多会话状态卡。
 - insert:
     - id: dsh-answer-pet
       name: dsh-answer-pet

@@ -3,18 +3,208 @@ window.__ModuleLoader__.load({
 	factory: (require) => {
 		var module = { exports: {} };
 		var exports = module.exports;
-// dsh-answer-pet 浏览器 half：纯 DOM 自渲染「回答进度宠物」——DeepSeek 蓝鲸（SVG 手绘，参考用户提供的卡通鲸鱼）。
-// 形态：官方 bundle client（exports {name, apply} 经 __ModuleLoader__.load 注册，client 内核
-// 挂载时调用 apply(ctx)）。零平台模块依赖：CSS 内联注入，无 import/export——构建脚本只做
-// 文本拼接包装（无需 esbuild）。
+// PetTheme v1 浏览器运行时：声明式内置主题注册、校验、回退与阶段元数据解析。
+// 主题模块不得访问宿主会话事件；只接收归一化 phase/view，并通过 data 属性驱动 CSS。
+
+const PET_THEME_API_VERSION = 1
+const PET_PHASES = Object.freeze(['idle', 'turn', 'think', 'stream', 'tool', 'done', 'error'])
+const PET_PHASE_SET = new Set(PET_PHASES)
+const PET_THEME_ID = /^[a-z][a-z0-9-]{0,31}$/
+const PET_ANIMATION_ID = /^[a-z][a-z0-9-]{0,31}$/
+const PET_THEME_REGISTRY = new Map()
+
+function assertTheme(condition, message) {
+  if (!condition) throw new TypeError(`[answer-pet theme] ${message}`)
+}
+
+function validatePetTheme(theme) {
+  assertTheme(theme !== null && typeof theme === 'object' && !Array.isArray(theme), 'theme 必须是对象')
+  assertTheme(theme.apiVersion === PET_THEME_API_VERSION, `apiVersion 必须为 ${PET_THEME_API_VERSION}`)
+  assertTheme(typeof theme.id === 'string' && PET_THEME_ID.test(theme.id), 'id 必须是 kebab-case，最长 32 字符')
+  assertTheme(typeof theme.name === 'string' && theme.name.trim().length > 0, 'name 不能为空')
+  assertTheme(typeof theme.aspectRatio === 'number' && Number.isFinite(theme.aspectRatio)
+    && theme.aspectRatio >= .5 && theme.aspectRatio <= 3, 'aspectRatio 必须在 0.5–3 之间')
+  assertTheme(typeof theme.markup === 'string' && theme.markup.includes('<svg'), 'markup 必须包含 SVG')
+  assertTheme(theme.markup.includes('ap-pet-svg'), 'SVG 根节点必须包含 ap-pet-svg 类')
+  assertTheme(!/<\s*(script|foreignObject|iframe|image)\b|\son[a-z]+\s*=|javascript:|https?:\/\//i.test(theme.markup),
+    'markup 包含脚本、外部资源或危险元素/属性')
+  assertTheme(typeof theme.css === 'string', 'css 必须是字符串')
+  assertTheme(theme.css.includes(`[data-answer-pet][data-ap-theme="${theme.id}"]`), 'css 必须限定到主题 scope')
+  assertTheme(!/@import\b|url\s*\(/i.test(theme.css), 'css 不得导入或引用外部资源')
+  assertTheme(theme.phases !== null && typeof theme.phases === 'object', 'phases 必须是对象')
+  for (const phase of PET_PHASES) {
+    const item = theme.phases[phase]
+    assertTheme(item !== null && typeof item === 'object', `缺少 phases.${phase}`)
+    assertTheme(typeof item.animation === 'string' && PET_ANIMATION_ID.test(item.animation),
+      `phases.${phase}.animation 格式无效`)
+    assertTheme(item.bubble === null || typeof item.bubble === 'string',
+      `phases.${phase}.bubble 必须是字符串或 null`)
+  }
+  return theme
+}
+
+function registerPetTheme(theme) {
+  validatePetTheme(theme)
+  assertTheme(!PET_THEME_REGISTRY.has(theme.id), `主题 ${theme.id} 重复注册`)
+  const phases = {}
+  for (const phase of PET_PHASES) phases[phase] = Object.freeze({ ...theme.phases[phase] })
+  const frozen = Object.freeze({ ...theme, phases: Object.freeze(phases) })
+  PET_THEME_REGISTRY.set(theme.id, frozen)
+  return frozen
+}
+
+function resolvePetTheme(id, fallbackId = 'blue-whale') {
+  if (typeof id === 'string' && PET_THEME_REGISTRY.has(id)) return PET_THEME_REGISTRY.get(id)
+  const fallback = PET_THEME_REGISTRY.get(fallbackId)
+  assertTheme(fallback !== undefined, `回退主题 ${fallbackId} 未注册`)
+  return fallback
+}
+
+function petPhaseMeta(theme, phase) {
+  const normalized = PET_PHASE_SET.has(phase) ? phase : 'idle'
+  return theme.phases[normalized] ?? theme.phases.idle
+}
+
+function petThemeCss() {
+  return Array.from(PET_THEME_REGISTRY.values(), (theme) => theme.css).join('\n')
+}
+
+// 默认主题：保持 0.5.x 蓝鲸 SVG、阶段动画、眨眼和气泡文案完全兼容。
+const BLUE_WHALE_THEME = registerPetTheme({
+  apiVersion: PET_THEME_API_VERSION,
+  id: 'blue-whale',
+  name: '蓝鲸',
+  aspectRatio: 1.58,
+  markup: `<svg class="ap-pet-svg ap-whale-svg" viewBox="0 0 200 120" aria-hidden="true">
+  <defs>
+    <linearGradient id="apWhaleBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#63A9D0"/><stop offset=".48" stop-color="#3D86B7"/><stop offset="1" stop-color="#276B9D"/>
+    </linearGradient>
+    <linearGradient id="apWhaleFin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#448FBE"/><stop offset="1" stop-color="#245F90"/>
+    </linearGradient>
+    <clipPath id="apBellyClip"><path d="M13 70 C31 78 48 79 66 77 C86 75 99 68 109 62 C113 83 122 96 140 100 C123 111 99 116 72 114 C39 113 18 100 11 82 Z"/></clipPath>
+  </defs>
+  <g class="ap-tail">
+    <path d="M153 65 C154 50 149 34 147 21 C160 27 169 38 169 50 C177 40 188 35 198 34 C195 50 184 61 169 66 C163 68 158 68 153 65 Z" fill="url(#apWhaleFin)" stroke="#174F7C" stroke-width="3.2" stroke-linejoin="round"/>
+    <path d="M168 50 C170 55 170 61 169 66" fill="none" stroke="#72B6D8" stroke-width="2" opacity=".45"/>
+  </g>
+  <path d="M12 62 C12 32 39 17 74 18 C105 19 117 35 130 55 C140 71 148 76 158 68 C164 63 167 57 169 51 C172 66 168 78 158 85 C151 90 143 92 135 89 C123 106 101 114 72 114 C38 114 16 99 9 79 C7 72 8 66 12 62 Z" fill="url(#apWhaleBody)" stroke="#174F7C" stroke-width="3.4" stroke-linejoin="round"/>
+  <path d="M22 54 C29 31 51 23 75 24 C96 25 108 34 118 47" fill="none" stroke="#91C9E4" stroke-width="3.2" stroke-linecap="round" opacity=".55"/>
+  <path d="M13 70 C31 78 48 79 66 77 C86 75 99 68 109 62 C113 83 122 96 140 100 C123 111 99 116 72 114 C39 113 18 100 11 82 Z" fill="#F3E4BC" stroke="#BFA878" stroke-width="2.6"/>
+  <g clip-path="url(#apBellyClip)" fill="none" stroke="#BCA675" stroke-width="2.2" opacity=".72">
+    <path d="M25 68 Q30 91 48 112"/><path d="M39 70 Q45 95 62 115"/><path d="M54 72 Q61 98 78 116"/><path d="M70 72 Q78 98 94 114"/><path d="M86 69 Q94 93 111 109"/><path d="M101 64 Q108 84 127 102"/>
+  </g>
+  <g class="ap-fin">
+    <path d="M102 74 C111 83 121 99 122 110 C109 109 97 101 92 88 C90 82 94 76 102 74 Z" fill="url(#apWhaleFin)" stroke="#174F7C" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M101 80 C108 88 113 96 116 104" fill="none" stroke="#72B6D8" stroke-width="2" opacity=".45"/>
+  </g>
+  <path d="M45 107 C43 116 45 120 51 119 C58 117 61 112 60 107 Z" fill="url(#apWhaleFin)" stroke="#174F7C" stroke-width="2.6"/>
+  <g class="ap-spout" fill="none" stroke="#3D86B7" stroke-width="4" stroke-linecap="round"><path d="M58 22 C58 11 54 5 49 2"/><path d="M58 21 C61 10 66 6 72 6"/></g>
+  <ellipse cx="58" cy="24" rx="5" ry="2.5" fill="#174F7C" opacity=".72"/>
+  <g class="ap-eye"><ellipse cx="69" cy="54" rx="12" ry="14" fill="#fff" stroke="#174F7C" stroke-width="3"/><ellipse class="ap-pupil" cx="72" cy="57" rx="6" ry="7.5" fill="#16232D"/><circle cx="70" cy="53" r="2.4" fill="#fff"/></g>
+  <g class="ap-eye-happy"><path d="M60 57 Q69 46 78 57" fill="none" stroke="#16232D" stroke-width="4" stroke-linecap="round"/></g>
+  <path d="M61 41 Q69 36 77 42" fill="none" stroke="#174F7C" stroke-width="3.2" stroke-linecap="round"/><path class="ap-mouth" d="M58 70 Q68 77 79 68" fill="none" stroke="#174F7C" stroke-width="3.2" stroke-linecap="round"/>
+</svg>`,
+  css: `
+[data-answer-pet][data-ap-theme="blue-whale"] .ap-pet-svg{filter:drop-shadow(0 5px 7px rgba(20,48,78,.28))}
+[data-answer-pet][data-ap-theme="blue-whale"] .ap-tail{transform-box:fill-box;transform-origin:12% 58%;animation:ap-whale-tail 1.8s ease-in-out infinite}
+@keyframes ap-whale-tail{0%,100%{transform:rotate(-2deg)}50%{transform:rotate(9deg)}}
+[data-answer-pet][data-ap-theme="blue-whale"][data-ap-phase="stream"] .ap-tail{animation-duration:.42s}
+[data-answer-pet][data-ap-theme="blue-whale"][data-ap-phase="done"] .ap-tail{animation-duration:.55s}
+[data-answer-pet][data-ap-theme="blue-whale"] .ap-fin{transform-box:fill-box;transform-origin:18% 12%;animation:ap-whale-fin 1.7s ease-in-out infinite}
+@keyframes ap-whale-fin{0%,100%{transform:rotate(0)}50%{transform:rotate(8deg)}}
+[data-answer-pet][data-ap-theme="blue-whale"][data-ap-phase="tool"] .ap-fin,[data-answer-pet][data-ap-theme="blue-whale"][data-ap-phase="stream"] .ap-fin{animation-duration:.55s}
+[data-answer-pet][data-ap-theme="blue-whale"] .ap-spout{transform-box:fill-box;transform-origin:50% 100%;animation:ap-whale-spout 2.2s ease-in-out infinite}
+@keyframes ap-whale-spout{0%,100%{transform:translateY(0) scaleY(.96);opacity:.8}50%{transform:translateY(-3px) scaleY(1.08);opacity:1}}
+[data-answer-pet][data-ap-theme="blue-whale"][data-ap-phase="stream"] .ap-spout,[data-answer-pet][data-ap-theme="blue-whale"][data-ap-phase="think"] .ap-spout{animation-duration:.75s}
+[data-answer-pet][data-ap-theme="blue-whale"] .ap-eye{transform-box:fill-box;transform-origin:center;animation:ap-whale-blink 4.8s infinite}
+[data-answer-pet][data-ap-theme="blue-whale"] .ap-pupil{transform-box:fill-box;transform-origin:center;transition:transform .18s ease}
+[data-answer-pet][data-ap-theme="blue-whale"][data-ap-phase="think"] .ap-pupil,[data-answer-pet][data-ap-theme="blue-whale"][data-ap-phase="turn"] .ap-pupil{transform:translateY(-4px)}
+[data-answer-pet][data-ap-theme="blue-whale"][data-ap-phase="stream"] .ap-pupil,[data-answer-pet][data-ap-theme="blue-whale"][data-ap-phase="tool"] .ap-pupil{transform:translateX(3px) translateY(2px)}
+[data-answer-pet][data-ap-theme="blue-whale"][data-ap-phase="error"] .ap-pupil{transform:translateY(4px)}
+[data-answer-pet][data-ap-theme="blue-whale"][data-ap-phase="stream"] .ap-eye,[data-answer-pet][data-ap-theme="blue-whale"][data-ap-phase="done"] .ap-eye{animation:none}
+@keyframes ap-whale-blink{0%,90%,100%{transform:scaleY(1)}93%,97%{transform:scaleY(.08)}}
+[data-answer-pet][data-ap-theme="blue-whale"][data-ap-click-blink] .ap-eye{animation:ap-whale-click-blink .24s ease-in-out 1!important}
+@keyframes ap-whale-click-blink{0%,100%{transform:scaleY(1)}45%,65%{transform:scaleY(.06)}}
+[data-answer-pet][data-ap-theme="blue-whale"] .ap-eye-happy{display:none}
+[data-answer-pet][data-ap-theme="blue-whale"][data-ap-phase="done"] .ap-eye{opacity:0}
+[data-answer-pet][data-ap-theme="blue-whale"][data-ap-phase="done"] .ap-eye-happy{display:block}
+[data-answer-pet][data-ap-theme="blue-whale"][data-ap-click-blink] .ap-eye{opacity:1!important}
+[data-answer-pet][data-ap-theme="blue-whale"][data-ap-click-blink] .ap-eye-happy{display:none!important}
+[data-answer-pet][data-ap-theme="blue-whale"][data-ap-phase="stream"] .ap-mouth{transform-box:fill-box;transform-origin:50% 50%;animation:ap-whale-talk .38s ease-in-out infinite}
+@keyframes ap-whale-talk{0%,100%{transform:scaleY(1)}50%{transform:scaleY(.72)}}
+@media(prefers-reduced-motion:reduce){[data-answer-pet][data-ap-theme="blue-whale"] .ap-tail,[data-answer-pet][data-ap-theme="blue-whale"] .ap-fin,[data-answer-pet][data-ap-theme="blue-whale"] .ap-spout,[data-answer-pet][data-ap-theme="blue-whale"] .ap-eye,[data-answer-pet][data-ap-theme="blue-whale"] .ap-mouth{animation:none!important}}
+`,
+  phases: {
+    idle: { animation: 'idle', bubble: '我在这儿等你～' },
+    turn: { animation: 'think', bubble: '收到！开始处理…' },
+    think: { animation: 'think', bubble: '思考中…' },
+    stream: { animation: 'stream', bubble: null },
+    tool: { animation: 'tool', bubble: null },
+    done: { animation: 'done', bubble: '回答完成！' },
+    error: { animation: 'error', bubble: '出错了…' },
+  },
+})
+
+// 示例主题：橘猫。用于验证核心 UI 不依赖蓝鲸 DOM 结构，亦可作为第三方主题模板。
+const ORANGE_CAT_THEME = registerPetTheme({
+  apiVersion: PET_THEME_API_VERSION,
+  id: 'orange-cat',
+  name: '橘猫',
+  aspectRatio: 1.25,
+  markup: `<svg class="ap-pet-svg ap-cat-svg" viewBox="0 0 150 120" aria-hidden="true">
+  <defs><linearGradient id="apCatBody" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F6A64B"/><stop offset="1" stop-color="#D97828"/></linearGradient></defs>
+  <path class="ap-cat-tail" d="M119 82 C145 91 150 67 139 58 C132 52 124 58 130 65 C137 72 132 79 121 74" fill="none" stroke="#D97828" stroke-width="13" stroke-linecap="round"/>
+  <path d="M36 40 L31 15 L55 31 C66 25 86 25 97 31 L120 15 L116 43 C126 55 128 79 117 96 C105 113 48 115 32 96 C20 81 22 55 36 40 Z" fill="url(#apCatBody)" stroke="#85471F" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M35 30 L34 21 L46 32" fill="#F6C18B"/><path d="M108 32 L117 21 L116 35" fill="#F6C18B"/>
+  <path d="M54 32 L59 49 M73 29 L73 48 M92 32 L87 49" fill="none" stroke="#A75525" stroke-width="4" stroke-linecap="round"/>
+  <g class="ap-cat-eyes"><ellipse cx="53" cy="63" rx="9" ry="11" fill="#FFF8E9"/><ellipse cx="95" cy="63" rx="9" ry="11" fill="#FFF8E9"/><ellipse class="ap-cat-pupil" cx="54" cy="65" rx="4" ry="6" fill="#29342F"/><ellipse class="ap-cat-pupil" cx="96" cy="65" rx="4" ry="6" fill="#29342F"/></g>
+  <g class="ap-cat-happy"><path d="M44 64 Q53 55 62 64 M86 64 Q95 55 104 64" fill="none" stroke="#29342F" stroke-width="4" stroke-linecap="round"/></g>
+  <path d="M70 73 L76 73 L73 78 Z" fill="#9E4F47"/><path class="ap-cat-mouth" d="M73 78 Q67 85 61 80 M73 78 Q79 85 85 80" fill="none" stroke="#6D3C2C" stroke-width="3" stroke-linecap="round"/>
+  <path d="M42 78 L15 73 M43 85 L13 87 M104 78 L134 73 M104 85 L137 88" fill="none" stroke="#85471F" stroke-width="2.5" stroke-linecap="round"/>
+  <path class="ap-cat-paw" d="M43 99 Q49 88 58 99" fill="#F6B567" stroke="#85471F" stroke-width="3"/><path d="M87 99 Q96 88 104 99" fill="#F6B567" stroke="#85471F" stroke-width="3"/>
+</svg>`,
+  css: `
+[data-answer-pet][data-ap-theme="orange-cat"] .ap-pet-svg{filter:drop-shadow(0 5px 7px rgba(74,39,19,.3))}
+[data-answer-pet][data-ap-theme="orange-cat"] .ap-cat-tail{transform-box:fill-box;transform-origin:8% 55%;animation:ap-cat-tail 1.35s ease-in-out infinite}
+@keyframes ap-cat-tail{0%,100%{transform:rotate(-5deg)}50%{transform:rotate(12deg)}}
+[data-answer-pet][data-ap-theme="orange-cat"] .ap-cat-eyes{transform-box:fill-box;transform-origin:center;animation:ap-cat-blink 4.2s infinite}
+@keyframes ap-cat-blink{0%,88%,100%{transform:scaleY(1)}91%,96%{transform:scaleY(.08)}}
+[data-answer-pet][data-ap-theme="orange-cat"] .ap-cat-happy{display:none}
+[data-answer-pet][data-ap-theme="orange-cat"][data-ap-phase="done"] .ap-cat-eyes{display:none}
+[data-answer-pet][data-ap-theme="orange-cat"][data-ap-phase="done"] .ap-cat-happy{display:block}
+[data-answer-pet][data-ap-theme="orange-cat"][data-ap-click-blink] .ap-cat-eyes{display:block;animation:ap-cat-click-blink .24s ease-in-out 1!important}
+[data-answer-pet][data-ap-theme="orange-cat"][data-ap-click-blink] .ap-cat-happy{display:none!important}
+@keyframes ap-cat-click-blink{0%,100%{transform:scaleY(1)}45%,65%{transform:scaleY(.06)}}
+[data-answer-pet][data-ap-theme="orange-cat"][data-ap-phase="think"] .ap-cat-pupil,[data-answer-pet][data-ap-theme="orange-cat"][data-ap-phase="turn"] .ap-cat-pupil{transform:translateY(-3px)}
+[data-answer-pet][data-ap-theme="orange-cat"][data-ap-phase="stream"] .ap-cat-mouth{transform-box:fill-box;transform-origin:center;animation:ap-cat-talk .36s ease-in-out infinite}
+@keyframes ap-cat-talk{0%,100%{transform:scaleY(1)}50%{transform:scaleY(.55)}}
+[data-answer-pet][data-ap-theme="orange-cat"][data-ap-phase="tool"] .ap-cat-paw{transform-box:fill-box;transform-origin:80% 100%;animation:ap-cat-paw .42s ease-in-out infinite}
+@keyframes ap-cat-paw{0%,100%{transform:rotate(0)}50%{transform:rotate(-15deg) translateY(-3px)}}
+[data-answer-pet][data-ap-theme="orange-cat"][data-ap-phase="stream"] .ap-cat-tail{animation-duration:.45s}
+@media(prefers-reduced-motion:reduce){[data-answer-pet][data-ap-theme="orange-cat"] .ap-cat-tail,[data-answer-pet][data-ap-theme="orange-cat"] .ap-cat-eyes,[data-answer-pet][data-ap-theme="orange-cat"] .ap-cat-mouth,[data-answer-pet][data-ap-theme="orange-cat"] .ap-cat-paw{animation:none!important}}
+`,
+  phases: {
+    idle: { animation: 'idle', bubble: '喵，我在这里～' },
+    turn: { animation: 'think', bubble: '收到，看看是什么…' },
+    think: { animation: 'think', bubble: '认真思考中…' },
+    stream: { animation: 'stream', bubble: null },
+    tool: { animation: 'tool', bubble: null },
+    done: { animation: 'done', bubble: '做好啦，喵！' },
+    error: { animation: 'error', bubble: '好像遇到问题了…' },
+  },
+})
+
+// dsh-answer-pet 浏览器 half：可扩展「回答状态宠物」核心 UI。
+// 形态：官方 bundle client（exports {name, apply} 经 __ModuleLoader__.load 注册）。构建脚本按顺序
+// 拼接 PetTheme v1 运行时、内置主题与本文件；浏览器端仍为零平台模块依赖。
 //
 // 功能：
-// - 宠物（内联 SVG 蓝鲸）：参考用户给出的圆润卡通鲸鱼——大头、米色腹纹、喷水孔、上翘尾鳍；
-//   随回答阶段摆尾/喷水/眨眼，流式时快速摆尾，完成时眯眼笑。
-// - 进度条：阶段权重 + token 填充（宿主推导），显示 %、输出 token、速率、耗时；流式时波纹动画；
-//   顶部显示「当前运行中的对话」标题（宿主 /state 下发 session.title + running）。
+// - PetTheme v1：SVG、局部 CSS、宽高比、阶段动作和气泡文案与核心状态卡解耦；默认蓝鲸，可选橘猫。
+// - 进度条：阶段权重 + token 填充（宿主推导），显示 %、输出 token、速率、耗时和模型轨迹。
 // - 气泡：流式期间显示正在写的文本片段；工具阶段显示工具名。
-// - 交互：拖拽移动（持久化）；点击宠物循环切换停靠角；进度条可收起（「–」按钮）。
+// - 交互：拖拽移动（持久化）；单击宠物眨眼；会话面板可收起。
 // - 数据：轮询 GET /answer-pet/state（pollMs 默认 800ms 平滑）+ EventSource /answer-pet/events
 //   （阶段边沿即时刷新，不等轮询周期）。
 // - 页面感知：onboarding 激活时隐藏；dialog 打开时降为 inert（半透明不挡点击）。
@@ -27,7 +217,7 @@ const CONFIG_URL = '/answer-pet/config'
 const EVENTS_URL = '/answer-pet/events'
 
 // 与 Node half src/config.mjs DEFAULTS 保持一致（客户端默认值，服务端配置到达前兜底）。
-const CFG_DEFAULTS = { size: 96, corner: 'br', opacity: 1, pollMs: 800, showBar: true, showBubble: true }
+const CFG_DEFAULTS = { theme: 'blue-whale', size: 96, corner: 'br', opacity: 1, pollMs: 800, showBar: true, showBubble: true }
 let cfg = { ...CFG_DEFAULTS }
 let configRevision = 0
 let barHidden = localStorage.getItem(LS_BAR) === '0'
@@ -35,59 +225,15 @@ let barHidden = localStorage.getItem(LS_BAR) === '0'
 const CSS = `
 [data-${PREFIX}] { position: fixed; z-index: 2147483000; font-family: system-ui, sans-serif;
   user-select: none; touch-action: none; }
-[data-${PREFIX}] .ap-stage { position: relative; width: calc(var(--ap-size, 96px) * 1.58); height: var(--ap-size, 96px);
+[data-${PREFIX}] .ap-stage { position: relative; width: calc(var(--ap-size, 96px) * var(--ap-aspect, 1.58)); height: var(--ap-size, 96px);
   cursor: grab; border-radius: 14px; }
 [data-${PREFIX}] .ap-stage:active { cursor: grabbing; }
 [data-${PREFIX}][data-ap-dragging] .ap-stage { cursor: grabbing; }
-/* ---- 蓝鲸（内联 SVG）---- */
-[data-${PREFIX}] .ap-svg { display: block; width: 100%; height: 100%;
-  filter: drop-shadow(0 5px 7px rgba(20,48,78,.28)); overflow: visible; }
-/* 尾鳍：常态缓摆，回答时加速 */
-[data-${PREFIX}] .ap-tail { transform-box: fill-box; transform-origin: 12% 58%;
-  animation: ap-tail-wave 1.8s ease-in-out infinite; }
-@keyframes ap-tail-wave { 0%,100% { transform: rotate(-2deg); } 50% { transform: rotate(9deg); } }
-[data-${PREFIX}][data-ap-phase="stream"] .ap-tail { animation-duration: .42s; }
-[data-${PREFIX}][data-ap-phase="done"] .ap-tail { animation-duration: .55s; }
-/* 侧鳍：工作/工具阶段轻拍 */
-[data-${PREFIX}] .ap-fin { transform-box: fill-box; transform-origin: 18% 12%;
-  animation: ap-fin-wave 1.7s ease-in-out infinite; }
-@keyframes ap-fin-wave { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(8deg); } }
-[data-${PREFIX}][data-ap-phase="tool"] .ap-fin,
-[data-${PREFIX}][data-ap-phase="stream"] .ap-fin { animation-duration: .55s; }
-/* 喷水：思考/输出时更活跃 */
-[data-${PREFIX}] .ap-spout { transform-box: fill-box; transform-origin: 50% 100%;
-  animation: ap-spout 2.2s ease-in-out infinite; }
-@keyframes ap-spout { 0%,100% { transform: translateY(0) scaleY(.96); opacity: .8; } 50% { transform: translateY(-3px) scaleY(1.08); opacity: 1; } }
-[data-${PREFIX}][data-ap-phase="stream"] .ap-spout,
-[data-${PREFIX}][data-ap-phase="think"] .ap-spout { animation-duration: .75s; }
-/* 眼睛：眨眼 + 瞳孔位移 */
-[data-${PREFIX}] .ap-eye { transform-box: fill-box; transform-origin: center;
-  animation: ap-blink 4.8s infinite; }
-[data-${PREFIX}] .ap-pupil { transform-box: fill-box; transform-origin: center;
-  transition: transform .18s ease; }
-[data-${PREFIX}][data-ap-phase="think"] .ap-pupil,
-[data-${PREFIX}][data-ap-phase="turn"] .ap-pupil { transform: translateY(-4px); }
-[data-${PREFIX}][data-ap-phase="stream"] .ap-pupil,
-[data-${PREFIX}][data-ap-phase="tool"] .ap-pupil { transform: translateX(3px) translateY(2px); }
-[data-${PREFIX}][data-ap-phase="error"] .ap-pupil { transform: translateY(4px); }
-[data-${PREFIX}][data-ap-phase="stream"] .ap-eye,
-[data-${PREFIX}][data-ap-phase="done"] .ap-eye { animation: none; }
-@keyframes ap-blink { 0%, 90%, 100% { transform: scaleY(1); } 93%, 97% { transform: scaleY(.08); } }
-/* 鼠标轻点：只眨一次眼，不移动角色 */
-[data-${PREFIX}][data-ap-click-blink] .ap-eye { animation: ap-click-blink .24s ease-in-out 1 !important; }
-@keyframes ap-click-blink { 0%,100% { transform: scaleY(1); } 45%,65% { transform: scaleY(.06); } }
-/* 完成态：眯眼笑 */
-[data-${PREFIX}] .ap-eye-happy { display: none; }
-[data-${PREFIX}][data-ap-phase="done"] .ap-eye { opacity: 0; }
-[data-${PREFIX}][data-ap-phase="done"] .ap-eye-happy { display: block; }
+/* ---- 宠物主题公共外壳：具体 SVG 与局部动画由 PetTheme 提供 ---- */
+[data-${PREFIX}] .ap-pet-slot, [data-${PREFIX}] .ap-pet-svg { display: block; width: 100%; height: 100%; }
+[data-${PREFIX}] .ap-pet-svg { overflow: visible; }
 [data-${PREFIX}][data-ap-click-blink] .ap-stage { animation-play-state: paused !important; }
-[data-${PREFIX}][data-ap-click-blink] .ap-eye { opacity: 1 !important; }
-[data-${PREFIX}][data-ap-click-blink] .ap-eye-happy { display: none !important; }
-/* 流式时嘴角轻动 */
-[data-${PREFIX}][data-ap-phase="stream"] .ap-mouth { transform-box: fill-box; transform-origin: 50% 50%;
-  animation: ap-talk .38s ease-in-out infinite; }
-@keyframes ap-talk { 0%,100% { transform: scaleY(1); } 50% { transform: scaleY(.72); } }
-/* 阶段动作（整只鲸鱼） */
+/* 归一化阶段动作（所有主题可在 phases.*.animation 中复用） */
 [data-${PREFIX}] .ap-stage.ap-anim-idle { animation: ap-bob 3.4s ease-in-out infinite; }
 [data-${PREFIX}] .ap-stage.ap-anim-think { animation: ap-think 2.2s ease-in-out infinite; }
 [data-${PREFIX}] .ap-stage.ap-anim-stream { animation: ap-type .9s ease-in-out infinite; }
@@ -175,94 +321,12 @@ const CSS = `
 [data-${PREFIX}][data-ap-inert] { opacity: .25; pointer-events: none; }
 [data-${PREFIX}][data-ap-hidden] { display: none; }
 @media (prefers-reduced-motion: reduce) {
-  [data-${PREFIX}] .ap-stage { animation: none !important; }
-  [data-${PREFIX}] .ap-tail, [data-${PREFIX}] .ap-fin, [data-${PREFIX}] .ap-spout { animation: none !important; }
-  [data-${PREFIX}] .ap-eye { animation: none !important; }
-  [data-${PREFIX}] .ap-mouth { animation: none !important; }
-  [data-${PREFIX}] .ap-bar-fill { transition: none; }
+  [data-${PREFIX}] .ap-stage, [data-${PREFIX}] .ap-pet-slot * { animation: none !important; }
+  [data-${PREFIX}] .ap-session-fill { transition: none; }
 }
 `
 
-// 蓝鲸 SVG：viewBox 0 0 200 120。参考用户提供的卡通鲸鱼：圆润大头、米色腹纹、喷水孔、
-// 上翘双叶尾鳍与侧鳍。所有表情状态由 CSS 按 data-ap-phase 驱动。
-const WHALE_SVG = `
-<svg class="ap-svg" viewBox="0 0 200 120" aria-hidden="true">
-  <defs>
-    <linearGradient id="apWhaleBody" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#63A9D0"/>
-      <stop offset=".48" stop-color="#3D86B7"/>
-      <stop offset="1" stop-color="#276B9D"/>
-    </linearGradient>
-    <linearGradient id="apWhaleFin" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#448FBE"/>
-      <stop offset="1" stop-color="#245F90"/>
-    </linearGradient>
-    <clipPath id="apBellyClip">
-      <path d="M13 70 C31 78 48 79 66 77 C86 75 99 68 109 62 C113 83 122 96 140 100 C123 111 99 116 72 114 C39 113 18 100 11 82 Z"/>
-    </clipPath>
-  </defs>
-  <!-- 尾鳍（双叶，参考图中上翘尾巴） -->
-  <g class="ap-tail">
-    <path d="M153 65 C154 50 149 34 147 21 C160 27 169 38 169 50 C177 40 188 35 198 34 C195 50 184 61 169 66 C163 68 158 68 153 65 Z"
-      fill="url(#apWhaleFin)" stroke="#174F7C" stroke-width="3.2" stroke-linejoin="round"/>
-    <path d="M168 50 C170 55 170 61 169 66" fill="none" stroke="#72B6D8" stroke-width="2" opacity=".45"/>
-  </g>
-  <!-- 身体：大头、圆背、小尾根 -->
-  <path d="M12 62 C12 32 39 17 74 18 C105 19 117 35 130 55 C140 71 148 76 158 68 C164 63 167 57 169 51 C172 66 168 78 158 85 C151 90 143 92 135 89 C123 106 101 114 72 114 C38 114 16 99 9 79 C7 72 8 66 12 62 Z"
-    fill="url(#apWhaleBody)" stroke="#174F7C" stroke-width="3.4" stroke-linejoin="round"/>
-  <!-- 背部高光 -->
-  <path d="M22 54 C29 31 51 23 75 24 C96 25 108 34 118 47" fill="none"
-    stroke="#91C9E4" stroke-width="3.2" stroke-linecap="round" opacity=".55"/>
-  <!-- 米色腹部 -->
-  <path d="M13 70 C31 78 48 79 66 77 C86 75 99 68 109 62 C113 83 122 96 140 100 C123 111 99 116 72 114 C39 113 18 100 11 82 Z"
-    fill="#F3E4BC" stroke="#BFA878" stroke-width="2.6"/>
-  <!-- 腹纹 -->
-  <g clip-path="url(#apBellyClip)" fill="none" stroke="#BCA675" stroke-width="2.2" opacity=".72">
-    <path d="M25 68 Q30 91 48 112"/>
-    <path d="M39 70 Q45 95 62 115"/>
-    <path d="M54 72 Q61 98 78 116"/>
-    <path d="M70 72 Q78 98 94 114"/>
-    <path d="M86 69 Q94 93 111 109"/>
-    <path d="M101 64 Q108 84 127 102"/>
-  </g>
-  <!-- 侧鳍 -->
-  <g class="ap-fin">
-    <path d="M102 74 C111 83 121 99 122 110 C109 109 97 101 92 88 C90 82 94 76 102 74 Z"
-      fill="url(#apWhaleFin)" stroke="#174F7C" stroke-width="3" stroke-linejoin="round"/>
-    <path d="M101 80 C108 88 113 96 116 104" fill="none" stroke="#72B6D8" stroke-width="2" opacity=".45"/>
-  </g>
-  <!-- 底部小鳍 -->
-  <path d="M45 107 C43 116 45 120 51 119 C58 117 61 112 60 107 Z"
-    fill="url(#apWhaleFin)" stroke="#174F7C" stroke-width="2.6"/>
-  <!-- 喷水孔 + 水花 -->
-  <g class="ap-spout" fill="none" stroke="#3D86B7" stroke-width="4" stroke-linecap="round">
-    <path d="M58 22 C58 11 54 5 49 2"/>
-    <path d="M58 21 C61 10 66 6 72 6"/>
-  </g>
-  <ellipse cx="58" cy="24" rx="5" ry="2.5" fill="#174F7C" opacity=".72"/>
-  <!-- 眼睛 + 高光 -->
-  <g class="ap-eye">
-    <ellipse cx="69" cy="54" rx="12" ry="14" fill="#fff" stroke="#174F7C" stroke-width="3"/>
-    <ellipse class="ap-pupil" cx="72" cy="57" rx="6" ry="7.5" fill="#16232D"/>
-    <circle cx="70" cy="53" r="2.4" fill="#fff"/>
-  </g>
-  <g class="ap-eye-happy">
-    <path d="M60 57 Q69 46 78 57" fill="none" stroke="#16232D" stroke-width="4" stroke-linecap="round"/>
-  </g>
-  <!-- 眉毛与笑嘴 -->
-  <path d="M61 41 Q69 36 77 42" fill="none" stroke="#174F7C" stroke-width="3.2" stroke-linecap="round"/>
-  <path class="ap-mouth" d="M58 70 Q68 77 79 68" fill="none" stroke="#174F7C" stroke-width="3.2" stroke-linecap="round"/>
-</svg>`
-
-const PHASE_META = {
-  idle:   { anim: 'idle',   bubble: '我在这儿等你～' },
-  turn:   { anim: 'think',  bubble: '收到！开始处理…' },
-  think:  { anim: 'think',  bubble: '思考中…' },
-  stream: { anim: 'stream', bubble: null }, // bubble = 文本片段
-  tool:   { anim: 'tool',   bubble: null }, // bubble = 工具名
-  done:   { anim: 'done',   bubble: '回答完成！' },
-  error:  { anim: 'error',  bubble: '出错了…' },
-}
+// 宠物 SVG、局部 CSS 和阶段文案由 PetTheme v1 注册表提供；核心只处理归一化状态。
 
 function fmtTokens(n) {
   if (n >= 10000) return `${(n / 1000).toFixed(1)}k`
@@ -274,8 +338,8 @@ function fmtElapsed(ms) {
   if (s < 60) return `${s}s`
   return `${Math.floor(s / 60)}m${s % 60}s`
 }
-function phaseMeta(phase) {
-  return PHASE_META[phase] ?? PHASE_META.idle
+function phaseMeta(theme, phase) {
+  return petPhaseMeta(theme, phase)
 }
 
 function apply() {
@@ -284,14 +348,14 @@ function apply() {
   if (style === null) {
     style = document.createElement('style')
     style.id = 'answer-pet-css'
-    style.textContent = CSS
+    style.textContent = `${CSS}\n${petThemeCss()}`
     document.head.appendChild(style)
   }
   const host = document.createElement('div')
   host.setAttribute('data-answer-pet', '')
   host.innerHTML = `
     <div class="ap-stage">
-      ${WHALE_SVG}
+      <div class="ap-pet-slot"></div>
       <div class="ap-bubble"></div>
       <button class="ap-collapse-count" title="展开进度条" aria-label="展开进度条">0</button>
       <button class="ap-bar-hide" title="收起会话面板" aria-label="收起会话面板"></button>
@@ -299,6 +363,7 @@ function apply() {
     <div class="ap-bar"><div class="ap-session-list"></div></div>`
   document.body.appendChild(host)
   const stage = host.querySelector('.ap-stage')
+  const petSlot = host.querySelector('.ap-pet-slot')
   const bubble = host.querySelector('.ap-bubble')
   const bar = host.querySelector('.ap-bar')
   const sessionList = host.querySelector('.ap-session-list')
@@ -308,11 +373,25 @@ function apply() {
   let pollTimer = null
   let sse = null
   let posSaved = localStorage.getItem(LS_POS)
+  let activeTheme = resolvePetTheme(CFG_DEFAULTS.theme)
+
+  // ---- 主题：只挂载已注册、已校验的内置 PetTheme；未知 id 自动回退蓝鲸 ----
+  const mountPetTheme = (requestedId) => {
+    const next = resolvePetTheme(requestedId)
+    if (activeTheme === next && petSlot.childElementCount > 0) return
+    activeTheme = next
+    host.setAttribute('data-ap-theme', activeTheme.id)
+    host.setAttribute('data-ap-theme-api', String(activeTheme.apiVersion))
+    host.style.setProperty('--ap-aspect', String(activeTheme.aspectRatio))
+    petSlot.innerHTML = activeTheme.markup
+  }
+  mountPetTheme(CFG_DEFAULTS.theme)
 
   // ---- 配置 ----
   const applyConfig = (next, revision) => {
     if (revision !== undefined) configRevision = revision
     cfg = { ...CFG_DEFAULTS, ...next }
+    mountPetTheme(cfg.theme)
     host.style.setProperty('--ap-size', `${cfg.size}px`)
     host.style.opacity = String(cfg.opacity)
     applyPosition()
@@ -326,7 +405,7 @@ function apply() {
 
   // ---- 位置 ----
   // 折叠/展开不改变角色几何尺寸，避免点击后跳位或缩放。
-  const petWidth = () => cfg.size * 1.58
+  const petWidth = () => cfg.size * activeTheme.aspectRatio
   const petHeight = () => cfg.size
   const clampX = (x) => Math.max(0, Math.min(x, window.innerWidth - petWidth() - 4))
   const clampY = (y) => Math.max(0, Math.min(y, window.innerHeight - petHeight() - 45))
@@ -499,9 +578,9 @@ function apply() {
     if (view === null) return
     if (data.configRevision !== configRevision) loadConfig()
     const phase = view.phase
-    const meta2 = phaseMeta(phase)
+    const meta2 = phaseMeta(activeTheme, phase)
     host.setAttribute('data-ap-phase', phase)
-    stage.className = `ap-stage ap-anim-${meta2.anim}`
+    stage.className = `ap-stage ap-anim-${meta2.animation}`
     // 气泡
     let bubbleText = meta2.bubble
     if (phase === 'stream' && cfg.showBubble && view.textSnippet) {

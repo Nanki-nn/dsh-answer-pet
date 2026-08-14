@@ -1,19 +1,24 @@
-// dsh-answer-pet 客户端构建器：把 .dsh-plugin/client/index.mjs（自包含、零 import/export）
-// 包装成官方 bundle client 产物 .dsh-plugin/client.js（__ModuleLoader__.load 契约）。
+// dsh-answer-pet 客户端构建器：按顺序拼接 PetTheme 运行时、内置主题和核心客户端，
+// 再包装成官方 bundle client 产物 .dsh-plugin/client.js（__ModuleLoader__.load 契约）。
 // 契约：
-// - 源码无 import/export（客户端零依赖——不需要 esbuild，纯文本拼接）。
-// - 源码以 `module.exports = { name, apply }` 收尾（factory 作用域内提供 module/exports）。
+// - SOURCES 均无 import/export（客户端零平台依赖——不需要 esbuild，纯文本拼接）。
+// - 最后一个核心源码以 `module.exports = { name, apply }` 收尾。
 // - --check 模式在内存生成后与已提交产物逐字节比对，不一致非零退出（改源码后必须重建）。
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 const ROOT = resolve(import.meta.dirname, '..')
-const ENTRY = join(ROOT, '.dsh-plugin', 'client', 'index.mjs')
+const SOURCES = [
+  join(ROOT, '.dsh-plugin', 'client', 'themes', 'runtime.mjs'),
+  join(ROOT, '.dsh-plugin', 'client', 'themes', 'blue-whale.mjs'),
+  join(ROOT, '.dsh-plugin', 'client', 'themes', 'orange-cat.mjs'),
+  join(ROOT, '.dsh-plugin', 'client', 'index.mjs'),
+]
 const OUTPUT = join(ROOT, '.dsh-plugin', 'client.js')
 
 /** 生成 client.js。@param {{ check?: boolean }} opts */
 export function generate({ check = false } = {}) {
-  const body = readFileSync(ENTRY, 'utf8')
+  const body = SOURCES.map((file) => readFileSync(file, 'utf8').replace(/\n$/, '')).join('\n\n')
   const code = `window.__ModuleLoader__.load({\n`
     + `\tid: "dsh-answer-pet",\n`
     + `\tfactory: (require) => {\n`

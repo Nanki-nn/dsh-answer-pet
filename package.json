@@ -1,8 +1,8 @@
 {
   "name": "dsh-answer-pet",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
-  "description": "DeepSeek Harness Web 蓝鲸桌面宠物：实时显示多会话回答进度、模型轨迹、工具调用、token、输出速率与耗时。",
+  "description": "DeepSeek Harness Web 可扩展回答状态宠物框架：支持宠物主题、多会话进度、模型轨迹和工具调用。",
   "author": {
     "name": "Nanki-nn",
     "email": "1113049408@qq.com"
@@ -22,11 +22,14 @@
     "deepseek-harness",
     "desktop-pet",
     "answer-progress",
-    "multi-session"
+    "multi-session",
+    "pet-theme",
+    "extensible"
   ],
   "files": [
     ".dsh-plugin",
     "assets",
+    "docs",
     "cordis.patch.yml",
     "README.md",
     "LICENSE"

@@ -3,10 +3,12 @@
 import z from 'schemastery'
 
 export const NAMESPACE = 'answer-pet'
+export const BUILTIN_THEME_IDS = Object.freeze(['blue-whale', 'orange-cat'])
 
 /** 体验层默认值（数值已 clamp 到安全域）。 */
 export const DEFAULTS = Object.freeze({
-  size: 96,            // 宠物尺寸 px（48–200）
+  theme: 'blue-whale', // 内置 PetTheme id
+  size: 96,            // 宠物高度 px（48–200）
   corner: 'br',        // 停靠角：br 右下 / bl 左下 / tr 右上 / tl 左上
   opacity: 1,          // 常态透明度 0.2–1
   pollMs: 800,         // /state 轮询间隔（进度平滑度）
@@ -17,6 +19,7 @@ export const DEFAULTS = Object.freeze({
 /** schemastery schema（settings.register 用；默认值 = DEFAULTS，防双源漂移）。 */
 export function buildSchema() {
   return z.object({
+    theme: z.union(BUILTIN_THEME_IDS).default(DEFAULTS.theme),
     size: z.number().min(48).max(200).default(DEFAULTS.size),
     corner: z.union(['br', 'bl', 'tr', 'tl']).default(DEFAULTS.corner),
     opacity: z.number().min(0.2).max(1).default(DEFAULTS.opacity),
@@ -29,4 +32,7 @@ export function buildSchema() {
 /** 跨字段校验（settings.register 的 validate 用；当前无成对约束，保留形状校验）。 */
 export function validateConfig(value) {
   if (value !== null && typeof value !== 'object') throw new Error('answer-pet 配置必须是对象')
+  if (typeof value?.theme === 'string' && !BUILTIN_THEME_IDS.includes(value.theme)) {
+    throw new Error(`answer-pet.theme 未安装：${value.theme}`)
+  }
 }
