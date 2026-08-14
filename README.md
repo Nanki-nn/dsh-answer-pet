@@ -2,10 +2,6 @@
 
 <p align="center"><strong>DSH Web GUI 蓝鲸桌面宠物：实时展示回答进度、多会话状态与模型执行轨迹。</strong></p>
 
-<p align="center">
-  <img width="206" height="207" alt="dsh-answer-pet 蓝鲸形象" src="https://github.com/user-attachments/assets/575dfe92-7b18-47be-830e-c2234587ed7a">
-</p>
-
 `dsh-answer-pet` 是一个 DeepSeek Harness Web bundle 插件。它在页面中显示一只可拖拽的蓝鲸，并将每个运行会话的回答阶段、进度、模型轨迹、工具调用、token、输出速率和耗时展示为独立状态卡片。
 
 <p align="center">
