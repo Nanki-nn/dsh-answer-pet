@@ -12,13 +12,26 @@ const SOURCES = [
   join(ROOT, '.dsh-plugin', 'client', 'themes', 'runtime.mjs'),
   join(ROOT, '.dsh-plugin', 'client', 'themes', 'blue-whale.mjs'),
   join(ROOT, '.dsh-plugin', 'client', 'themes', 'orange-cat.mjs'),
+  join(ROOT, '.dsh-plugin', 'client', 'themes', 'silver-shaded-cat.mjs'),
   join(ROOT, '.dsh-plugin', 'client', 'index.mjs'),
 ]
 const OUTPUT = join(ROOT, '.dsh-plugin', 'client.js')
+const SILVER_CAT_PNG = join(ROOT, 'assets', 'silver-shaded-cat-cropped.png')
+const SILVER_CAT_TOKEN = '__AP_SILVER_CAT_PNG_BASE64__'
+
+/** 构建时把可信内置 PNG 注入主题，源码不手写超长 base64。 */
+function sourceText(file) {
+  let source = readFileSync(file, 'utf8').replace(/\n$/, '')
+  if (file.endsWith('silver-shaded-cat.mjs')) {
+    const encoded = readFileSync(SILVER_CAT_PNG).toString('base64')
+    source = source.replace(SILVER_CAT_TOKEN, encoded)
+  }
+  return source
+}
 
 /** 生成 client.js。@param {{ check?: boolean }} opts */
 export function generate({ check = false } = {}) {
-  const body = SOURCES.map((file) => readFileSync(file, 'utf8').replace(/\n$/, '')).join('\n\n')
+  const body = SOURCES.map(sourceText).join('\n\n')
   const code = `window.__ModuleLoader__.load({\n`
     + `\tid: "dsh-answer-pet",\n`
     + `\tfactory: (require) => {\n`

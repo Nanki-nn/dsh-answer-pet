@@ -11,6 +11,8 @@ PetTheme v1 当前支持**随插件源码构建的可信内置主题**。它不�
 - 将未经清理的用户 SVG 注入 DSH 页面；
 - 向主题暴露原始 `session/event` 或完整工具参数。
 
+普通主题禁止 `<image>`。确需保留原画细节的可信内置主题可以显式声明 `trustedRaster: true`，但运行时只允许一张构建时注入的 `data:image/png;base64,...`，仍拒绝外部 URL、SVG data URI、事件属性和多个图片节点。这个能力不对配置或第三方动态主题开放。
+
 开发者可以新增独立主题文件并向项目提交贡献。后续版本可在此契约保持稳定的前提下加入经过清理的本地主题包。
 
 ## 文件结构
@@ -19,9 +21,10 @@ PetTheme v1 当前支持**随插件源码构建的可信内置主题**。它不�
 .dsh-plugin/client/
 ├─ themes/
 │  ├─ runtime.mjs       # PetTheme v1 校验、注册、解析和回退
-│  ├─ blue-whale.mjs    # 默认主题
-│  └─ orange-cat.mjs    # 示例主题
-└─ index.mjs            # 核心状态卡、拖拽、气泡和数据连接
+│  ├─ blue-whale.mjs        # 默认主题
+│  ├─ orange-cat.mjs        # 示例主题
+│  └─ silver-shaded-cat.mjs # 可信内嵌 PNG + SVG 状态覆盖层
+└─ index.mjs                # 核心状态卡、拖拽、气泡和数据连接
 ```
 
 构建脚本按顺序拼接运行时、主题和核心客户端。主题文件不使用 `import` / `export`，并调用运行时提供的 `registerPetTheme()`。
@@ -61,6 +64,7 @@ registerPetTheme({
 | `name` | `string` | 非空 | 用户可读名称 |
 | `aspectRatio` | `number` | `0.5`–`3` | 宽度 ÷ 高度；高度由 `size` 配置决定 |
 | `markup` | `string` | 必须包含 `<svg` | 宠物矢量结构 |
+| `trustedRaster` | `true`（可选） | 仅可信内置主题；只能内嵌一张 PNG | 保留原画细节的显式能力位 |
 | `css` | `string` | 必须限定作用域 | 宠物局部样式与动画 |
 | `phases` | `object` | 必须覆盖全部 7 个阶段 | 阶段动作和默认气泡 |
 

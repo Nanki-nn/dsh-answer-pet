@@ -21,7 +21,17 @@ function validatePetTheme(theme) {
     && theme.aspectRatio >= .5 && theme.aspectRatio <= 3, 'aspectRatio 必须在 0.5–3 之间')
   assertTheme(typeof theme.markup === 'string' && theme.markup.includes('<svg'), 'markup 必须包含 SVG')
   assertTheme(theme.markup.includes('ap-pet-svg'), 'SVG 根节点必须包含 ap-pet-svg 类')
-  assertTheme(!/<\s*(script|foreignObject|iframe|image)\b|\son[a-z]+\s*=|javascript:|https?:\/\//i.test(theme.markup),
+  assertTheme(theme.trustedRaster === undefined || theme.trustedRaster === true,
+    'trustedRaster 只能为 true 或省略')
+  const imageTags = theme.markup.match(/<\s*image\b[^>]*>/gi) ?? []
+  if (theme.trustedRaster === true) {
+    assertTheme(imageTags.length === 1, 'trustedRaster 主题必须且只能包含一张 image')
+    assertTheme(/\b(?:href|xlink:href)\s*=\s*["']data:image\/png;base64,[a-z0-9+/=]+["']/i.test(imageTags[0]),
+      'trustedRaster image 必须是内嵌 PNG base64 data URI')
+  } else {
+    assertTheme(imageTags.length === 0, '普通主题不得包含 image；可信内嵌 PNG 需显式 trustedRaster')
+  }
+  assertTheme(!/<\s*(script|foreignObject|iframe)\b|\son[a-z]+\s*=|javascript:|https?:\/\//i.test(theme.markup),
     'markup 包含脚本、外部资源或危险元素/属性')
   assertTheme(typeof theme.css === 'string', 'css 必须是字符串')
   assertTheme(theme.css.includes(`[data-answer-pet][data-ap-theme="${theme.id}"]`), 'css 必须限定到主题 scope')

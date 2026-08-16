@@ -3,7 +3,7 @@
 import z from 'schemastery'
 
 export const NAMESPACE = 'answer-pet'
-export const BUILTIN_THEME_IDS = Object.freeze(['blue-whale', 'orange-cat'])
+export const BUILTIN_THEME_IDS = Object.freeze(['blue-whale', 'orange-cat', 'silver-shaded-cat'])
 
 /** 体验层默认值（数值已 clamp 到安全域）。 */
 export const DEFAULTS = Object.freeze({

@@ -7,6 +7,9 @@ import { DEFAULTS, BUILTIN_THEME_IDS, buildSchema, validateConfig } from '../.ds
 const runtimeSource = readFileSync(new URL('../.dsh-plugin/client/themes/runtime.mjs', import.meta.url), 'utf8')
 const whaleSource = readFileSync(new URL('../.dsh-plugin/client/themes/blue-whale.mjs', import.meta.url), 'utf8')
 const catSource = readFileSync(new URL('../.dsh-plugin/client/themes/orange-cat.mjs', import.meta.url), 'utf8')
+const silverCatPng = readFileSync(new URL('../assets/silver-shaded-cat-cropped.png', import.meta.url)).toString('base64')
+const silverCatSource = readFileSync(new URL('../.dsh-plugin/client/themes/silver-shaded-cat.mjs', import.meta.url), 'utf8')
+  .replace('__AP_SILVER_CAT_PNG_BASE64__', silverCatPng)
 
 function runtime() {
   const context = {}
@@ -51,8 +54,23 @@ test('PetTheme 拒绝危险 SVG、外部资源和未限定作用域的 CSS', () 
   const api = runtime()
   assert.throws(() => api.validatePetTheme({ ...fixture(), markup: '<svg class="ap-pet-svg"><script>alert(1)</script></svg>' }), /危险/)
   assert.throws(() => api.validatePetTheme({ ...fixture(), markup: '<svg class="ap-pet-svg" onload="alert(1)"></svg>' }), /危险/)
+  assert.throws(() => api.validatePetTheme({ ...fixture(), markup: '<svg class="ap-pet-svg"><image href="https://x/cat.png"/></svg>' }), /image/)
+  assert.throws(() => api.validatePetTheme({ ...fixture(), markup: '<svg class="ap-pet-svg"><image href="data:image/png;base64,iVBORw0KGgo="/></svg>' }), /trustedRaster/)
+  assert.throws(() => api.validatePetTheme({ ...fixture(), trustedRaster: true, markup: '<svg class="ap-pet-svg"><image href="data:image/svg+xml;base64,PHN2Zz4="/></svg>' }), /PNG/)
   assert.throws(() => api.validatePetTheme({ ...fixture(), css: 'body { display: none }' }), /scope/)
   assert.throws(() => api.validatePetTheme({ ...fixture(), css: '[data-answer-pet][data-ap-theme="blue-whale"]{background:url(https://x)}' }), /外部资源/)
+})
+
+test('PetTheme 只允许显式可信主题内嵌一张 PNG', () => {
+  const api = runtime()
+  const theme = {
+    ...fixture('trusted-cat'),
+    trustedRaster: true,
+    markup: '<svg class="ap-pet-svg"><image href="data:image/png;base64,iVBORw0KGgo="/></svg>',
+    css: '[data-answer-pet][data-ap-theme="trusted-cat"]{color:red}',
+  }
+  assert.equal(api.validatePetTheme(theme), theme)
+  assert.throws(() => api.validatePetTheme({ ...theme, markup: `${theme.markup}<image href="data:image/png;base64,iVBORw0KGgo="/>` }), /一张 image/)
 })
 
 test('主题注册表拒绝重复，并对未知主题回退蓝鲸', () => {
@@ -76,24 +94,27 @@ test('未知 phase 使用 idle 元数据，CSS 汇总全部主题', () => {
   assert.match(api.petThemeCss(), /orange-cat/)
 })
 
-test('实际内置蓝鲸和橘猫均通过契约注册', () => {
+test('实际内置蓝鲸、橘猫和银渐层猫均通过契约注册', () => {
   const context = {}
-  runInNewContext(`${runtimeSource}\n${whaleSource}\n${catSource}\nglobalThis.result={ids:Array.from(PET_THEME_REGISTRY.keys()),css:petThemeCss()};`, context)
-  assert.deepEqual(Array.from(context.result.ids), ['blue-whale', 'orange-cat'])
+  runInNewContext(`${runtimeSource}\n${whaleSource}\n${catSource}\n${silverCatSource}\nglobalThis.result={ids:Array.from(PET_THEME_REGISTRY.keys()),css:petThemeCss()};`, context)
+  assert.deepEqual(Array.from(context.result.ids), ['blue-whale', 'orange-cat', 'silver-shaded-cat'])
   assert.match(context.result.css, /ap-whale-tail/)
   assert.match(context.result.css, /ap-cat-tail/)
+  assert.match(context.result.css, /ap-silver-cat-art/)
 })
 
-test('配置 schema 支持橘猫并拒绝未知主题', () => {
+test('配置 schema 支持猫主题并拒绝未知主题', () => {
   const schema = buildSchema()
   assert.equal(schema({}).theme, 'blue-whale')
   assert.equal(schema({ theme: 'orange-cat' }).theme, 'orange-cat')
+  assert.equal(schema({ theme: 'silver-shaded-cat' }).theme, 'silver-shaded-cat')
   assert.throws(() => schema({ theme: 'unknown-pet' }), /expected/)
   assert.doesNotThrow(() => validateConfig({ theme: 'orange-cat' }))
+  assert.doesNotThrow(() => validateConfig({ theme: 'silver-shaded-cat' }))
   assert.throws(() => validateConfig({ theme: 'unknown-pet' }), /未安装/)
 })
 
-test('配置默认蓝鲸并公开两个内置主题 id', () => {
+test('配置默认蓝鲸并公开三个内置主题 id', () => {
   assert.equal(DEFAULTS.theme, 'blue-whale')
-  assert.deepEqual(Array.from(BUILTIN_THEME_IDS), ['blue-whale', 'orange-cat'])
+  assert.deepEqual(Array.from(BUILTIN_THEME_IDS), ['blue-whale', 'orange-cat', 'silver-shaded-cat'])
 })

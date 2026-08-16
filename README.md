@@ -2,7 +2,7 @@
 
 <p align="center"><strong>DSH Web 可扩展回答状态宠物框架：宠物主题、多会话进度与模型执行轨迹。</strong></p>
 
-`dsh-answer-pet` 是一个 DeepSeek Harness Web bundle 插件和可扩展回答状态宠物框架。核心负责会话进度、模型轨迹和状态卡；声明式 `PetTheme v1` 负责宠物 SVG、动画、宽高比和阶段文案。默认使用蓝鲸，也内置橘猫示例主题。
+`dsh-answer-pet` 是一个 DeepSeek Harness Web bundle 插件和可扩展回答状态宠物框架。核心负责会话进度、模型轨迹和状态卡；声明式 `PetTheme v1` 负责宠物 SVG、动画、宽高比和阶段文案。默认使用蓝鲸，也内置橘猫示例主题和高相似度银渐层猫主题。
 
 <p align="center">
   <img src="./assets/dsh-answer-pet-demo.gif" width="560" alt="dsh-answer-pet 蓝鲸宠物、多会话进度卡和模型工具调用轨迹演示">
@@ -11,7 +11,7 @@
 ## 功能
 
 - 可扩展 `PetTheme v1`：宠物外观与回答进度核心解耦。
-- 内置蓝鲸和橘猫两个纯 SVG 主题，无外部图片资源。
+- 内置蓝鲸、橘猫和银渐层猫三个主题；银渐层猫使用构建时注入的可信内嵌 PNG，不加载外部图片资源。
 - 实时显示开始处理、思考、输出、工具调用和完成状态；工具失败会在轨迹中标红。
 - 显示输出 token、token/s、耗时、进度百分比和文本片段。
 - 多会话并发时，每个运行中的会话显示一张独立进度卡。
@@ -28,12 +28,19 @@
 |---|---|---|
 | `blue-whale` | 蓝鲸 | 默认主题，保持原有喷水、摆尾、眨眼和完成表情 |
 | `orange-cat` | 橘猫 | PetTheme v1 示例，包含摆尾、抬爪、说话和完成表情 |
+| `silver-shaded-cat` | 银渐层猫 | 去背景紧裁切原画 + 明显阶段动画：呼吸、眨眼、摇摆、说话、抬爪和完成跳跃 |
+
+<p align="center">
+  <img src="./assets/screenshots/blue-whale.png" width="31%" alt="蓝鲸主题与回答状态卡">
+  <img src="./assets/screenshots/orange-cat.png" width="31%" alt="橘猫主题与回答状态卡">
+  <img src="./assets/screenshots/silver-shaded-cat.png" width="31%" alt="银渐层猫主题与回答状态卡">
+</p>
 
 在配置中切换：
 
 ```yaml
 answer-pet:
-  theme: orange-cat
+  theme: silver-shaded-cat # blue-whale / orange-cat / silver-shaded-cat
 ```
 
 主题更新会在下一次配置刷新时挂载。未知主题会安全回退到 `blue-whale`。
@@ -135,7 +142,7 @@ dsh plugin --profile web add github:Nanki-nn/dsh-answer-pet
 
 ```yaml
 answer-pet:
-  theme: blue-whale # blue-whale / orange-cat
+  theme: blue-whale # blue-whale / orange-cat / silver-shaded-cat
   size: 96          # 宠物高度 px（48–200）
   corner: br        # 停靠角：br / bl / tr / tl
   opacity: 1        # 透明度（0.2–1）
@@ -162,7 +169,7 @@ dsh plugin --profile web add github:Nanki-nn/dsh-answer-pet
 
 ### 为什么设置主题后仍显示蓝鲸
 
-确认 `theme` 是已安装的主题 id。`0.6.0` 内置 `blue-whale` 和 `orange-cat`；未知或无效 id 会回退到蓝鲸。升级后还需要重启 `dsh web`，让新的 settings schema 生效。
+确认 `theme` 是已安装的主题 id。当前内置 `blue-whale`、`orange-cat` 和 `silver-shaded-cat`；未知或无效 id 会回退到蓝鲸。升级后还需要重启 `dsh web`，让新的 settings schema 生效。
 
 ### 为什么空闲时不显示数字 `0`
 
@@ -197,6 +204,7 @@ location.reload()
 - `.dsh-plugin/client/themes/runtime.mjs`：PetTheme v1 校验、注册、解析和蓝鲸回退。
 - `.dsh-plugin/client/themes/blue-whale.mjs`：默认蓝鲸主题。
 - `.dsh-plugin/client/themes/orange-cat.mjs`：橘猫示例主题和开发模板。
+- `.dsh-plugin/client/themes/silver-shaded-cat.mjs`：去背景紧裁切原画与 SVG 状态动画覆盖层组成的银渐层猫主题。
 - `.dsh-plugin/client/index.mjs`：主题无关的浏览器 DOM、状态卡、轨迹时间线和交互核心。
 - `.dsh-plugin/client.js`：由构建脚本按运行时 → 主题 → 核心顺序生成的 DSH client bundle。
 - `docs/PET_THEME.md`：主题契约、安全约束和开发流程。
